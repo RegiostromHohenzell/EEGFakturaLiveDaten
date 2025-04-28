@@ -1,7 +1,7 @@
 # EEG-Faktura Live-Daten für Website
 
 Autor: Simon Angleitner, April 2025\
-EEG Regiostrom Hohenzell (https://regiostrom.hohenzell.at/)
+EEG RegioStrom Hohenzell (https://regiostrom.hohenzell.at/)
 
 Der NodeJs-Server muss auf einem Server laufen, welcher von der Website aus erreichbar ist. Die Website lädt die Daten vom NodeJs-Server via einem HTTP-GET fetch()-Request. Auf dem Server wird dieser GET-Request dann in einen POST-Request für die API von EEG-Faktura umgewandelt (siehe https://eegfaktura.gitbook.io/eegfaktura-dokumentation/product-guides/api). Die EEG-Faktura-Zugangsdaten verlassen somit den Server nie!\
 Mit dem öffentlichen API-Key `apiKeySumData`, welchen die Website verwendet, können auch nur die aufsummierten Gesamt-Daten der gesamten EEG geladen werden. Es werden also keine persönlichen Daten einzelner Zählpunkte veröffentlicht.
