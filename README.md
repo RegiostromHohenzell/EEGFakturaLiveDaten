@@ -1,18 +1,22 @@
-# EEGFakturaLiveDaten
+# EEG-Faktura Live-Daten für Website
 
-Autor: Simon Angleitner, April 2025
+Autor: Simon Angleitner, April 2025\
+EEG Regiostrom Hohenzell (https://regiostrom.hohenzell.at/)
 
-Nötige Anpassungen in index.js:
+Der NodeJs-Server muss auf einem Server laufen, welcher von der Website aus erreichbar ist. Die Website lädt die Daten vom NodeJs-Server via einem HTTP-GET fetch()-Request. Auf dem Server wird dieser GET-Request dann in einen POST-Request für die API von EEG-Faktura umgewandelt (siehe https://eegfaktura.gitbook.io/eegfaktura-dokumentation/product-guides/api). Die EEG-Faktura-Zugangsdaten verlassen somit den Server nie!\
+Mit dem öffentlichen API-Key `apiKeySumData`, welchen die Website verwendet, können auch nur die aufsummierten Gesamt-Daten der gesamten EEG geladen werden. Es werden also keine persönlichen Daten einzelner Zählpunkte veröffentlicht.
 
-* Konstanten apiKeySumData und apikeyDetails unbedingt abändern!
+Nötige Anpassungen in `index.js`:
+
+* Konstanten apiKeySumData und apikeyDetails unbedingt abändern (ca. Zeile 16/17)!
 Generator z.B. https://codepen.io/corenominal/pen/rxOmMJ
-* ED-ID eintragen (ca. Zeile 134)
+* EC-ID eintragen (ca. Zeile 134)
 * X-Tenant eintragen (ca. Zeile 138)
 * Username/Passwort des EEG-Faktura-Zugangs eintragen (ca. Zeile 141/142)
 * minStart anpassen (ca. Zeile 196): kleinster möglicher Timestamp [ms] = Gründungsdatum der EEG
 * Beginn der Zählpunktnummer bei Bedarf je nach Netzbetreiber anpassen (ca. Zeile 238)
 
-Nötige Anpassungen in Website.html
+Nötige Anpassungen in `Website.html`:
 * URL/IP zum NodeJs-Server eintragen (ca. Zeile 102)
 
 
