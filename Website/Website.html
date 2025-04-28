@@ -1,0 +1,486 @@
+<div style="display: flex; align-items: center; gap: 10px; margin-bottom: 1em;">
+    <label for="startDate" style="margin: 0;">Datum auswählen:</label>
+    <button id="prevDateButton" title="Vorheriger Tag">&#8592;</button>
+    <input type="date" id="startDate" name="startDate">
+
+    <button id="nextDateButton" title="Nächster Tag">&#8594;</button>
+</div>
+
+<div class="view-tabs">
+    <button id="monthViewButton" class="tab-button">Monatsansicht</button>
+    <button id="dayViewButton" class="tab-button">Tagesansicht</button>
+</div>
+
+<h3 id="chartTitle" style="text-align: left; margin-bottom: 1em;"></h3>
+<div id="chartContainer" style="position: relative; padding-bottom: 3em;">
+    <canvas id="energyChart" height="150"></canvas>
+
+    <div id="errorOverlay" style="display: none; position: absolute; top: 0; left: 0;
+                width: 100%; height: 100%;
+                background-color: rgba(255, 255, 255, 0.9);
+                z-index: 2;
+                display: flex; justify-content: center; align-items: center;
+                flex-direction: column;
+                font-size: 1.5em; font-weight: bold; color: #c0392b;
+                pointer-events: none;">
+        Fehler beim Abruf der Daten
+        <h3 style="font-size: 1em; font-weight: normal; color: #7f8c8d; margin-top: 10px;">
+            Ungültiger Datumsbereich oder Fehler in der Datenschnittstelle </b>
+            Datumsbereich anpassen oder später erneut versuchen
+        </h3>
+    </div>
+
+    <div id="loadingSpinner"
+        style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); display: none;">
+        <div class="spinner"></div>
+    </div>
+
+    <div id="captionGrayedData" style="display: none; font-weight: bold;">
+        ausgegraute Balken = Daten unvollständig!
+    </div>
+</div>
+
+
+
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+    const monthViewButton = document.getElementById('monthViewButton');
+    const dayViewButton = document.getElementById('dayViewButton');
+    const prevDateButton = document.getElementById('prevDateButton');
+    const nextDateButton = document.getElementById('nextDateButton');
+    const dateInput = document.getElementById('startDate');
+    const errorOverlay = document.getElementById('errorOverlay');
+    const captionGrayedData = document.getElementById('captionGrayedData');
+
+    let viewMode = 'month'; // Standardansicht ist Monatsansicht
+    let selectedDate;
+
+    document.addEventListener('DOMContentLoaded', function () {
+        updateViewButtons();
+        const loadingSpinner = document.getElementById('loadingSpinner');
+
+        // Heute setzen (YYYY-MM-DD)
+        const today = new Date();
+        const todayString = today.toISOString().split('T')[0];
+        dateInput.value = todayString;
+
+        // Chart-Rendering Funktion
+        async function loadChartForDate(dateStr) {
+            updateChartTitle(dateStr);
+            disableButtons();
+
+            loadingSpinner.style.display = 'block';
+            
+            errorOverlay.style.display = 'none';
+
+            let selectedTimestamp = new Date(dateStr + 'T00:00:00').getTime();
+            let startTimestamp;
+            let endTimestamp;
+
+            let aggStr = "1d";
+            // Berechnung des startTimestamp je nach Ansicht
+            if (viewMode === 'month') {
+                startTimestamp = getStartOfMonth(selectedTimestamp) - 100;
+                endTimestamp = getEndOfMonthOrNow(selectedTimestamp);
+            } else if (viewMode === 'day') {
+                startTimestamp = getStartOfDay(selectedTimestamp);
+                endTimestamp = getEndOfDay(selectedTimestamp);
+                aggStr = "15m";
+            }
+
+
+            const apiUrl = `https://*******URL des NodeJs-Servers*******/?agg=${aggStr}&start=${startTimestamp}&end=${endTimestamp}&details=false&apiKey=5929a3a8-cbdf-4660-99a4-015919869ebf`;
+
+            try {
+                const response = await fetch(apiUrl);
+                const json = await response.json();
+
+                const consData = json.dataCons;
+                const genData = json.dataGen;
+
+                const labels = [];
+                const eegVerbrauch = [];
+                const evuVerbrauch = [];
+                const erzeugt = [];
+                const consColors = [];
+                const evuColors = [];
+                const genColors = [];
+
+                captionGrayedData.style.display = 'none';    // Legendentext "ausgegraute Daten" per Default ausblenden
+
+                consData.forEach((cons, index) => {
+                    const timestamp = cons.ts;
+
+                    if (new Date(timestamp - 1).getMonth() == new Date(dateInput.value).getMonth()) {    // Grenzwerte, welche vom Vormonat sind, ignorieren - timestamp-1, da EEGFaktura-API jeweils Timestamp von Mitternacht des Folgetages liefert
+                        labels.push(generateDateTimeLabel(timestamp, viewMode));
+
+                        const totalConsumption = cons.data.value[0];
+                        const fromEEG = cons.data.value[2];
+                        const fromEVU = totalConsumption - fromEEG;
+
+                        eegVerbrauch.push(fromEEG);
+                        evuVerbrauch.push(fromEVU);
+
+                        const consColor = cons.data.dataValid ? '#00e5ff' : '#ccfaff';
+                        consColors.push(consColor);
+
+                        const evuColor = cons.data.dataValid ? '#f50057' : '#ffccde';
+                        evuColors.push(evuColor);
+
+                        const correspondingGen = genData.find(g => g.ts === timestamp);
+                        const totalGeneration = correspondingGen ? correspondingGen.data.value[0] : 0;
+                        erzeugt.push(totalGeneration);
+
+                        const genColor = cons.data.dataValid ? '#255e59' : '#b6e2df';
+                        genColors.push(genColor);
+
+                        if(!(cons.data.dataValid))    // Legendentext "ausgegraute Daten" anzeigen
+                            captionGrayedData.style.display = 'inline';
+                    }
+                });
+
+                // Chart neu rendern
+                if (window.myEnergyChart) {
+                    window.myEnergyChart.destroy();
+                }
+
+                const ctx = document.getElementById('energyChart').getContext('2d');
+                window.myEnergyChart = new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: labels,
+                        datasets: [
+                            {
+                                label: 'Erzeugung',
+                                data: erzeugt,
+                                backgroundColor: genColors,
+                                stack: 'generation'
+                            },
+                            {
+                                label: 'Energieversorger',
+                                data: evuVerbrauch,
+                                backgroundColor: evuColors,
+                                stack: 'consumption'
+                            },
+                            {
+                                label: 'EEG',
+                                data: eegVerbrauch,
+                                backgroundColor: consColors,
+                                stack: 'consumption'
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        interaction: {
+                            mode: 'index',
+                            intersect: false,
+                        },
+                        scales: {
+                            x: { stacked: true },
+                            y: {
+                                stacked: true,
+                                title: {
+                                    display: true,
+                                    text: 'kWh'
+                                }
+                            }
+                        },
+                        plugins: {
+                            legend: { position: 'bottom' },
+                            tooltip: {
+                                mode: 'index',
+                                intersect: false
+                            }
+                        }
+                    }
+                });
+
+            } catch (error) {
+                console.log('API-Fehler:', error);
+
+                errorOverlay.style.display = 'flex';
+            } finally {
+                loadingSpinner.style.display = 'none';
+                enableButtons();
+
+            }
+        }
+
+        // Automatisches Laden bei Datumsauswahl
+        dateInput.addEventListener('change', () => {
+            selectedDate = dateInput.value;
+            if (selectedDate) {
+                loadChartForDate(selectedDate);
+            }
+        });
+
+        function updateViewButtons() {
+            if (viewMode === 'month') {
+                monthViewButton.classList.add('active');
+                dayViewButton.classList.remove('active');
+                monthViewButton.disabled = true;
+                dayViewButton.disabled = false;
+            } else {
+                dayViewButton.classList.add('active');
+                monthViewButton.classList.remove('active');
+                dayViewButton.disabled = true;
+                monthViewButton.disabled = false;
+            }
+        }
+
+        // Monatsansicht aktivieren
+        monthViewButton.addEventListener('click', () => {
+            if (viewMode !== 'month') {
+                viewMode = 'month';
+                updateViewButtons();
+                selectedDate = dateInput.value;
+                if (selectedDate) {
+                    loadChartForDate(selectedDate);
+                }
+            }
+        });
+
+        // Tagesansicht aktivieren
+        dayViewButton.addEventListener('click', () => {
+            if (viewMode !== 'day') {
+                viewMode = 'day';
+                updateViewButtons();
+                selectedDate = dateInput.value;
+
+                if (selectedDate) {
+                    // Konvertiere das Datum in ein Date-Objekt
+                    let selectedDateObj = new Date(selectedDate);
+                    let currentDate = new Date();
+
+                    // Berechne den Unterschied in Tagen
+                    let differenceInDays = Math.floor((currentDate - selectedDateObj) / (1000 * 3600 * 24));
+
+                    // Falls das Datum weniger als 5 Tage in der Vergangenheit liegt, setze es auf vor 5 Tagen
+                    if (differenceInDays < 5) {
+                        selectedDateObj.setDate(currentDate.getDate() - 5);  // Setze auf vor 5 Tagen
+                        selectedDate = selectedDateObj.toISOString().split('T')[0];  // Format YYYY-MM-DD
+                    }
+                    dateInput.value = selectedDate;
+
+                    loadChartForDate(selectedDate);
+                }
+            }
+        });
+
+        prevDateButton.addEventListener('click', () => {
+            changeDateBy(-1);
+        });
+
+        nextDateButton.addEventListener('click', () => {
+            changeDateBy(1);
+        });
+
+        function changeDateBy(step) {
+            const currentDate = new Date(dateInput.value);
+
+            if (viewMode === 'month') {
+                // Monat ändern und immer auf den 1. des neuen Monats setzen
+                currentDate.setDate(1);
+                const newMonth = currentDate.getMonth() + step;
+                currentDate.setMonth(newMonth);
+            } else {
+                // Nur Tage ändern
+                currentDate.setDate(currentDate.getDate() + step);
+            }
+
+            const newDateStr = currentDate.toISOString().split('T')[0];
+            dateInput.value = newDateStr;
+
+            loadChartForDate(newDateStr);
+        }
+
+
+        // Direkt beim Laden ausführen (Monatsansicht)
+        loadChartForDate(todayString);
+    });
+
+    function generateDateTimeLabel(timestamp, viewMode) {
+        let date = new Date(timestamp);
+
+        if (viewMode === 'month')
+            date = new Date(timestamp - 1);            // Timestamp ist bei Monatsansicht immer Mitternacht vom FOLGETAG -> daher -1 ms
+
+        const day = String(date.getDate()).padStart(2, '0');
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const year = date.getFullYear();
+        const hour = String(date.getHours()).padStart(2, '0');
+        const minute = String(date.getMinutes()).padStart(2, '0');
+
+        const dateLabel = `${day}.${month}.${year}`;
+        const timeLabel = `${hour}:${minute}`;
+
+        if (viewMode === 'month')
+            return `${dateLabel}`;
+
+        // viewMode Day
+        return `${timeLabel}`;
+    }
+
+    function getStartOfMonth(unixTimestamp) {
+        const date = new Date(unixTimestamp);
+        date.setDate(1);
+        date.setHours(0, 0, 0, 0);
+        return date.getTime();
+    }
+
+    function getEndOfMonthOrNow(unixTimestamp) {
+        const inputDate = new Date(unixTimestamp);
+
+        // Neues Datum: erster Tag des nächsten Monats
+        const nextMonth = new Date(inputDate.getFullYear(), inputDate.getMonth() + 1, 1);
+
+        // Ein Millisekunde vor dem ersten Tag des nächsten Monats = letzter Moment des aktuellen Monats
+        const endOfMonth = new Date(nextMonth.getTime() - 1);
+
+        const now = Date.now() - 5 * 60000;       // 5 Minuten in der Vergangenheit, um keinen Fehler im NodeJs-Server zu generieren
+
+        // Falls das Monatsende in der Zukunft liegt, gib den aktuellen Timestamp zurück
+        return endOfMonth.getTime() > now ? now : endOfMonth.getTime();
+    }
+
+    function getStartOfDay(unixTimestamp) {
+        const date = new Date(unixTimestamp);
+        date.setHours(0, 0, 0, 0); // Setze auf 00:00 Uhr des Tages
+        return date.getTime();
+    }
+
+    function getEndOfDay(unixTimestamp) {
+        const date = new Date(unixTimestamp);
+        date.setHours(23, 59, 59, 0); // Setze auf 00:00 Uhr des Tages
+        return date.getTime();
+    }
+
+    function updateChartTitle(dateStr) {
+        const date = new Date(dateStr + 'T00:00:00');
+        const chartTitle = document.getElementById('chartTitle');
+
+        if (viewMode === 'month') {
+            const monthName = date.toLocaleString('de-DE', { month: 'long' });
+            const year = date.getFullYear();
+            chartTitle.textContent = `Monatsansicht ${capitalizeFirstLetter(monthName)} ${year}`;
+        } else if (viewMode === 'day') {
+            const weekdayShort = {
+                'Montag': 'MO',
+                'Dienstag': 'DI',
+                'Mittwoch': 'MI',
+                'Donnerstag': 'DO',
+                'Freitag': 'FR',
+                'Samstag': 'SA',
+                'Sonntag': 'SO'
+            };
+
+            const weekdayFull = date.toLocaleDateString('de-DE', { weekday: 'long' });
+            const weekday = weekdayShort[weekdayFull];
+
+            const day = String(date.getDate()).padStart(2, '0');
+            const monthName = date.toLocaleString('de-DE', { month: 'long' });
+            const year = date.getFullYear();
+            chartTitle.textContent = `Tagesansicht ${weekday}, ${day}. ${capitalizeFirstLetter(monthName)} ${year}`;
+        }
+    }
+
+    function capitalizeFirstLetter(str) {
+        return str.charAt(0).toUpperCase() + str.slice(1);
+    }
+
+    function disableButtons() {
+        dateInput.disabled = true;
+        monthViewButton.disabled = true;
+        dayViewButton.disabled = true;
+        prevDateButton.disabled = true;
+        nextDateButton.disabled = true;
+    }
+
+    function enableButtons() {
+        dateInput.disabled = false;
+        monthViewButton.disabled = false;
+        dayViewButton.disabled = false;
+        prevDateButton.disabled = false;
+        nextDateButton.disabled = false;
+    }
+
+
+</script>
+
+<style>
+    #loadingSpinner {
+        width: 50px;
+        height: 50px;
+        border: 5px solid #f3f3f3;
+        border-top: 5px solid #3498db;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+        display: none;
+    }
+
+    #prevDateButton,
+    #nextDateButton {
+        padding-left: 1em;
+        padding-right: 1em;
+    }
+
+    @keyframes spin {
+        0% {
+            transform: rotate(0deg);
+        }
+
+        100% {
+            transform: rotate(360deg);
+        }
+    }
+
+    #chartContainer {
+        position: relative;
+        width: 100%;
+        aspect-ratio: 16 / 9;
+        padding-bottom: 3em;
+    }
+
+    input:disabled {
+        background-color: #f0f0f0;
+        color: #888;
+        cursor: not-allowed;
+    }
+
+    .view-tabs {
+        display: flex;
+        gap: 0px;
+        margin: 0em 0;
+    }
+
+    .tab-button {
+        padding: 10px 20px;
+        border: none;
+        border-width: 0px;
+        background-color: #c0c0c0;
+        border-color: #c0c0c0;
+        cursor: pointer;
+        font-weight: bold;
+        transition: background-color 0.3s, color 0.3s;
+    }
+
+    /* Button, wenn Ansicht aktiv */
+    .tab-button.active {
+        /*background-color: #f17e18;
+        color: white;*/
+        cursor: default;
+        border: none;
+        /*border-bottom: 0px solid white;*/
+    }
+
+    /* Button, wenn Ansicht nicht aktiv */
+    .tab-button:not(.active) {
+        background-color: #f9bb86;
+        color: white;
+        cursor: default;
+        border: none;
+        /*border-bottom: 0px solid white;*/
+    }
+</style>
