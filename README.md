@@ -11,8 +11,8 @@ Mit dem öffentlichen API-Key `apiKeySumData`, welchen die Website verwendet, k�
 
 * Die Konstanten `apiKeySumData` und `apikeyDetails` unbedingt abändern (ca. Zeile 16/17)!
 Generator z.B. https://codepen.io/corenominal/pen/rxOmMJ
-* EC-ID eintragen (ca. Zeile 134)
-* X-Tenant eintragen (ca. Zeile 138)
+* EC-ID eintragen ("AT..." ca. Zeile 134)
+* X-Tenant eintragen ("RC..." ca. Zeile 138)
 * Username/Passwort des EEG-Faktura-Zugangs eintragen (ca. Zeile 141/142)
 * minStart anpassen (ca. Zeile 196): kleinster möglicher Timestamp [ms] = Gründungsdatum der EEG
 * Beginn der Zählpunktnummer bei Bedarf je nach Netzbetreiber anpassen (ca. Zeile 238)
